@@ -2,3 +2,4 @@ node_modules/
 team-drafting-backend/node_modules/
 team-drafting-app/node_modules/
 .env
+team-drafting-backend/serviceAccountKey.json
