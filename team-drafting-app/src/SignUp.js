@@ -11,27 +11,32 @@ function SignUp() {
   const [displayName, setDisplayName] = useState("");
   const navigate = useNavigate(); // Initialize navigate
 
-  const handleSignUp = (e) => {
+  const handleSignUp = async (e) => {
     e.preventDefault();
-    // Create user with email and password
-    createUserWithEmailAndPassword(auth, email, password)
-      .then((userCredential) => {
-        console.log("User account created in:", userCredential.user);
-        navigate("/"); // Redirect to the home page
-        // Update the user's display name
-        return updateProfile(userCredential.user, {
-          displayName: displayName,
-        });
-      })
-      .then(() => {
-        // User profile updated successfully
-        console.log("User signed up:", auth.currentUser);
-        // Redirect or update UI as needed
-      })
-      .catch((error) => {
-        console.error("Error signing up:", error);
-        // Handle errors here
+    try {
+      // Create user with email and password
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+      console.log("User account created:", userCredential.user);
+
+      // Update the user's display name
+      await updateProfile(userCredential.user, {
+        displayName: displayName,
       });
+      console.log("User profile updated:", auth.currentUser);
+
+      // Force token refresh
+      await auth.currentUser.getIdToken(true);
+
+      // Redirect to the home page
+      navigate("/"); // Ensure this happens after profile update
+    } catch (error) {
+      console.error("Error signing up:", error);
+      // Handle errors here (e.g., set an error message in state)
+    }
   };
 
   return (
@@ -43,18 +48,21 @@ function SignUp() {
           placeholder="Display Name"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
+          required // Ensure the display name is provided
         />
         <input
           type="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          required // Ensure the email is provided
         />
         <input
           type="password"
           placeholder="Password (6+ characters)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          required // Ensure the password is provided
         />
         <button type="submit">Sign Up</button>
       </form>
@@ -63,4 +71,3 @@ function SignUp() {
 }
 
 export default SignUp;
-//end

@@ -37,8 +37,25 @@ io.use((socket, next) => {
     .auth()
     .verifyIdToken(token)
     .then((decodedToken) => {
-      socket.user = decodedToken;
-      next();
+      const uid = decodedToken.uid;
+
+      // Fetch the user record to get displayName
+      admin
+        .auth()
+        .getUser(uid)
+        .then((userRecord) => {
+          // Attach user data to the socket
+          socket.user = {
+            uid: userRecord.uid,
+            email: userRecord.email,
+            displayName: userRecord.displayName,
+          };
+          next();
+        })
+        .catch((error) => {
+          console.error("Error fetching user data:", error);
+          next(new Error("Authentication error"));
+        });
     })
     .catch((error) => {
       console.error("Authentication error:", error);
@@ -60,11 +77,19 @@ io.on("connection", (socket) => {
         {
           id: socket.id,
           uid: socket.user.uid,
-          displayName: socket.user.name || socket.user.email || socket.user.uid,
+          displayName:
+            socket.user.displayName || socket.user.email || socket.user.uid,
+          ready: false, // Initialize ready state
         },
       ],
       draftState: {
         picks: [],
+      },
+      settings: {
+        maxPlayers: 10,
+        draftType: "Standard", // Example setting
+        gameChoice: "League of Legends", // Default game choice
+        // Add more settings as needed
       },
     };
     socket.lobbyCode = lobbyCode;
@@ -75,6 +100,43 @@ io.on("connection", (socket) => {
     );
 
     io.to(lobbyCode).emit("playersUpdated", lobbies[lobbyCode].players);
+  });
+
+  // Handle updating lobby settings
+  socket.on("updateSettings", ({ lobbyCode, newSettings }) => {
+    const lobby = lobbies[lobbyCode];
+    if (lobby) {
+      // Ensure only the host can update settings
+      if (lobby.host !== socket.id) {
+        socket.emit("error", "Only the host can update lobby settings.");
+        return;
+      }
+
+      // Update the settings
+      lobby.settings = { ...lobby.settings, ...newSettings };
+      io.to(lobbyCode).emit("settingsUpdated", lobby.settings);
+      console.log(`Lobby ${lobbyCode} settings updated:`, lobby.settings);
+    } else {
+      socket.emit("error", "Lobby not found.");
+    }
+  });
+
+  socket.on("toggleReady", ({ lobbyCode }) => {
+    const lobby = lobbies[lobbyCode];
+    if (lobby) {
+      const player = lobby.players.find((p) => p.uid === socket.user.uid);
+      if (player) {
+        player.ready = !player.ready;
+        io.to(lobbyCode).emit("playersUpdated", lobby.players);
+        console.log(
+          `Player ${player.uid} toggled ready state to ${player.ready} in lobby ${lobbyCode}`
+        );
+      } else {
+        socket.emit("error", "Player not found in the lobby.");
+      }
+    } else {
+      socket.emit("error", "Lobby not found.");
+    }
   });
 
   // Handle joining a lobby
@@ -92,10 +154,19 @@ io.on("connection", (socket) => {
         lobby.players.push({
           id: socket.id,
           uid: socket.user.uid,
-          displayName: socket.user.name || socket.user.email || socket.user.uid,
+          displayName:
+            socket.user.displayName || socket.user.email || socket.user.uid,
+          ready: false, // Initialize ready state
         });
       } else {
         console.log(`User ${socket.user.uid} is already in lobby ${lobbyCode}`);
+        // Update player's socket ID
+        const player = lobby.players.find(
+          (player) => player.uid === socket.user.uid
+        );
+        if (player) {
+          player.id = socket.id;
+        }
       }
 
       socket.join(lobbyCode);
@@ -125,10 +196,19 @@ io.on("connection", (socket) => {
         lobby.players.push({
           id: socket.id,
           uid: socket.user.uid,
-          displayName: socket.user.name || socket.user.email || socket.user.uid,
+          displayName:
+            socket.user.displayName || socket.user.email || socket.user.uid,
+          ready: false, // Initialize ready state
         });
       } else {
         console.log(`User ${socket.user.uid} is already in lobby ${lobbyCode}`);
+        // Update player's socket ID
+        const player = lobby.players.find(
+          (player) => player.uid === socket.user.uid
+        );
+        if (player) {
+          player.id = socket.id;
+        }
       }
 
       socket.join(lobbyCode);
@@ -192,11 +272,54 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Handle starting the game
+  // Handle kicking a player
+  socket.on("kickPlayer", ({ lobbyCode, uid }) => {
+    const lobby = lobbies[lobbyCode];
+    if (lobby) {
+      // Ensure only the host can kick players
+      if (lobby.host !== socket.id) {
+        socket.emit("error", "Only the host can kick players.");
+        return;
+      }
+
+      // Find the player to kick
+      const playerIndex = lobby.players.findIndex(
+        (player) => player.uid === uid
+      );
+      if (playerIndex !== -1) {
+        const [kickedPlayer] = lobby.players.splice(playerIndex, 1);
+        // Notify the kicked player
+        io.to(kickedPlayer.id).emit("kicked", { lobbyCode });
+        // Notify remaining players
+        io.to(lobbyCode).emit("playersUpdated", lobby.players);
+        console.log(`Player ${uid} has been kicked from lobby ${lobbyCode}`);
+      } else {
+        socket.emit("error", "Player not found in the lobby.");
+      }
+    } else {
+      socket.emit("error", "Lobby not found.");
+    }
+  });
+
+  // Removed ban functionality as per your request
+
+  // **Modified: Handle starting the game**
   socket.on("startGame", ({ lobbyCode }) => {
     console.log(`Received startGame event for lobbyCode: ${lobbyCode}`);
     const lobby = lobbies[lobbyCode];
     if (lobby) {
+      // Ensure only the host can start the game
+      if (lobby.host !== socket.id) {
+        socket.emit("error", "Only the host can start the game.");
+        return;
+      }
+      // Check if all players are ready
+      const allReady = lobby.players.every((player) => player.ready);
+      if (!allReady) {
+        socket.emit("error", "Not all players are ready.");
+        return;
+      }
+
       io.to(lobbyCode).emit("gameStarted", lobbyCode);
       console.log(`Emitting gameStarted event to lobby ${lobbyCode}`);
     } else {

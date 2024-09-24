@@ -12,41 +12,46 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     let socketInstance;
 
-    const initializeSocket = async () => {
-      auth.onAuthStateChanged(async (user) => {
-        if (user) {
-          const idToken = await user.getIdToken();
-          socketInstance = io("http://localhost:8080", {
-            auth: {
-              token: idToken,
-            },
-          });
-
-          setSocket(socketInstance);
-
-          socketInstance.on("connect", () => {
-            console.log(`Connected to server with ID: ${socketInstance.id}`);
-          });
-
-          // Handle socket disconnection
-          socketInstance.on("disconnect", () => {
-            console.log("Socket disconnected");
-          });
-        } else {
-          if (socketInstance) {
-            socketInstance.disconnect();
-            setSocket(null);
-          }
+    const unsubscribe = auth.onIdTokenChanged(async (user) => {
+      if (user) {
+        const idToken = await user.getIdToken();
+        // Disconnect existing socket if any
+        if (socketInstance) {
+          socketInstance.disconnect();
         }
-      });
-    };
+        // Initialize new socket with updated token
+        socketInstance = io("http://localhost:8080", {
+          auth: {
+            token: idToken,
+          },
+        });
 
-    initializeSocket();
+        setSocket(socketInstance);
+
+        socketInstance.on("connect", () => {
+          console.log(`Connected to server with ID: ${socketInstance.id}`);
+        });
+
+        // Handle socket disconnection
+        socketInstance.on("disconnect", () => {
+          console.log("Socket disconnected");
+        });
+      } else {
+        // User is logged out, disconnect socket
+        if (socketInstance) {
+          socketInstance.disconnect();
+          socketInstance = null;
+        }
+        setSocket(null);
+      }
+    });
 
     return () => {
+      // Clean up on unmount
       if (socketInstance) {
         socketInstance.disconnect();
       }
+      unsubscribe();
     };
   }, []);
 
@@ -54,4 +59,3 @@ export const SocketProvider = ({ children }) => {
     <SocketContext.Provider value={socket}>{children}</SocketContext.Provider>
   );
 };
-//end

@@ -6,10 +6,12 @@ import { useNavigate } from "react-router-dom"; // Import useNavigate
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const navigate = useNavigate(); // Initialize navigate
 
   const handleLogin = (e) => {
     e.preventDefault();
+    setErrorMessage("");
     // Sign in user with email and password
     signInWithEmailAndPassword(auth, email, password)
       .then((userCredential) => {
@@ -18,7 +20,20 @@ function Login() {
       })
       .catch((error) => {
         console.error("Error logging in:", error);
-        // Handle errors here
+
+        switch (error.code) {
+          case "auth/invalid-credential":
+            setErrorMessage("Invalid credentials. Please try again.");
+            break;
+          case "auth/user-not-found":
+            setErrorMessage("No user found with this email.");
+            break;
+          case "auth/invalid-email":
+            setErrorMessage("Invalid email address.");
+            break;
+          default:
+            setErrorMessage("An error occurred. Please try again later.");
+        }
       });
   };
 
@@ -39,6 +54,7 @@ function Login() {
           onChange={(e) => setPassword(e.target.value)}
         />
         <button type="submit">Log In</button>
+        {errorMessage && <p className="error">{errorMessage}</p>}
       </form>
     </div>
   );
